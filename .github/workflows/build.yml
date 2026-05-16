@@ -20,24 +20,31 @@ jobs:
         with:
           channel: 'stable'
 
-      - run: pip install flet
+      - name: Install Flet
+        run: pip install flet
 
       # Вставляем разрешения на интернет и открытие ссылок прямо в манифест
       - name: Patch Android Manifest
         run: |
-          # Триггерим flet, чтобы он создал/скачал флаттер-шаблон
-          flet build apk --no-interactive || true
+          # Триггерим flet (скачивание шаблонов), автоматически соглашаясь на всё через echo "y"
+          echo "y" | flet build apk || true
           
-          # Находим сгенерированный AndroidManifest.xml
-          MANIFEST=$(find ~/.flet -name AndroidManifest.xml | grep main/AndroidManifest.xml | head -n 1)
+          # Ищем AndroidManifest.xml везде: и в кэше пользователя, и внутри установленного пакета python
+          MANIFESTS=$(find /home/runner /opt/hostedtoolcache/Python/ -name AndroidManifest.xml 2>/dev/null || true)
           
-          # Инжектим твои правила
-          sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET" />' $MANIFEST
-          sed -i '/<application/i \    <queries><intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent><intent><action android:name="android.intent.action.VIEW" /><data android:scheme="http" /></intent></queries>' $MANIFEST
+          # Проходимся по всем найденным манифестам и жестко инжектим твои правила
+          for MANIFEST in $MANIFESTS; do
+            echo "Патчим манифест: $MANIFEST"
+            sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET" />' "$MANIFEST"
+            sed -i '/<application/i \    <queries><intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent><intent><action android:name="android.intent.action.VIEW" /><data android:scheme="http" /></intent></queries>' "$MANIFEST"
+          done
 
-      - run: flet build apk --no-interactive
+      # Финальная сборка с прокидыванием "y" на случай проверок
+      - name: Build APK
+        run: echo "y" | flet build apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: prognoz-apk
           path: build/apk/app-release.apk
+
